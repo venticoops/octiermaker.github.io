@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tier List Maker con Usuarios y Caneca</title>
+  <title>Tier List Maker + GitHub Cloud Persistence</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
   <style>
     * { box-sizing: border-box; font-family: sans-serif; margin: 0; padding: 0; }
@@ -23,8 +23,6 @@
     button:hover, label.btn:hover { background: #444; }
     button.btn-save { background: #28a745; border-color: #28a745; }
     button.btn-save:hover { background: #218838; }
-    button.btn-json { background: #17a2b8; border-color: #17a2b8; }
-    button.btn-json:hover { background: #138496; }
     input[type="file"] { display: none; }
 
     /* Tier List */
@@ -63,7 +61,7 @@
     }
     .draggable-item:active { cursor: grabbing; }
 
-    /* Trash Bin (Caneca de Basura) */
+    /* Trash Bin */
     .trash-bin {
       position: fixed; bottom: 25px; right: 25px;
       width: 70px; height: 70px; background: #dc3545; border: 2px solid #ff6b6b;
@@ -71,9 +69,7 @@
       font-size: 30px; color: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
       z-index: 500; cursor: pointer; transition: transform 0.15s ease, background-color 0.15s ease;
     }
-    .trash-bin.drag-over {
-      background: #bd2130; border-color: #fff; transform: scale(1.15);
-    }
+    .trash-bin.drag-over { background: #bd2130; border-color: #fff; transform: scale(1.15); }
 
     /* Modales */
     .modal {
@@ -86,6 +82,9 @@
     }
     .img-container { max-height: 350px; margin-bottom: 15px; background: #000; }
     .img-container img { max-width: 100%; }
+
+    /* Indicator de carga */
+    .loading-status { font-size: 12px; color: #aaa; margin-left: 10px; display: none; }
   </style>
 </head>
 <body>
@@ -94,9 +93,9 @@
   <div class="modal" id="userModal">
     <div class="modal-content">
       <h2>Ingresar usuario</h2>
-      <p style="color: #aaa; font-size: 14px; margin-top: 5px;">Introduce tu nombre para guardar tus cambios en el navegador o cargar tu sesión existente.</p>
+      <p style="color: #aaa; font-size: 14px; margin-top: 5px;">Ingresa tu nombre. Se cargará tu archivo JSON directamente desde GitHub.</p>
       <input type="text" id="usernameInput" placeholder="Nombre de usuario..." autofocus>
-      <button onclick="loginUser()" style="width: 100%; background: #28a745; padding: 10px; font-weight: bold;">Entrar</button>
+      <button onclick="loginUser()" style="width: 100%; background: #28a745; padding: 10px; font-weight: bold;">Entrar y Cargar</button>
     </div>
   </div>
 
@@ -104,6 +103,7 @@
     <h1>Tier List Maker</h1>
     <div class="user-info">
       👤 <span id="currentUserDisplay">Invitado</span>
+      <span class="loading-status" id="loadingStatus">Cargando...</span>
       <button onclick="switchUser()" style="padding: 2px 8px; font-size: 11px;">Cambiar</button>
     </div>
   </div>
@@ -112,10 +112,7 @@
     <label class="btn" for="imageInput">Subir Imagen</label>
     <input type="file" id="imageInput" accept="image/*">
     <button onclick="addTier('NUEVO', '#858585')">+ Agregar Fila</button>
-    <button class="btn-save" onclick="saveUserData()">💾 Guardar Sesión</button>
-    <button class="btn-json" onclick="exportJSON()">📥 Descargar JSON</button>
-    <label class="btn" for="jsonInput" style="background:#17a2b8;">📤 Cargar JSON</label>
-    <input type="file" id="jsonInput" accept=".json" onchange="importJSON(event)">
+    <button class="btn-save" onclick="saveToGitHub()">☁️ Guardar en GitHub</button>
   </div>
 
   <div class="tier-list" id="tierList"></div>
@@ -126,9 +123,7 @@
   </div>
 
   <!-- Trash Bin -->
-  <div class="trash-bin" id="trashBin" title="Arrastra una imagen aquí para eliminarla">
-    🗑️
-  </div>
+  <div class="trash-bin" id="trashBin" title="Arrastra una imagen aquí para eliminarla">🗑️</div>
 
   <!-- Modal Recorte -->
   <div class="modal" id="cropModal" style="display: none;">
@@ -145,6 +140,12 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
   <script>
+    /* --- CONFIGURACIÓN DE GITHUB --- */
+    const GH_OWNER = 'TU_USUARIO_GITHUB';  // Cambia por tu usuario de GitHub
+    const GH_REPO  = 'TU_REPOSITORIO';      // Cambia por el nombre de tu repositorio
+    const GH_TOKEN = 'TU_PERSONAL_ACCESS_TOKEN'; // Tu token de acceso personal
+    
+    let currentSha = null; // Necesario para actualizar archivos existentes en GitHub
     let cropper = null;
     let draggedItem = null;
     let currentUser = null;
@@ -160,16 +161,27 @@
       setupDragAndDrop();
     };
 
-    /* --- SISTEMA DE USUARIO Y PERSISTENCIA --- */
-    function loginUser() {
-      const username = document.getElementById('usernameInput').value.trim();
+    /* --- INTEGRACIÓN CON LA API REST DE GITHUB --- */
+    
+    // Convertir texto/JSON a Base64 con soporte para Unicode (UTF-8)
+    function utf8_to_b64(str) {
+      return window.btoa(unescape(encodeURIComponent(str)));
+    }
+
+    // Convertir Base64 a texto/JSON con soporte para Unicode (UTF-8)
+    function b64_to_utf8(str) {
+      return decodeURIComponent(escape(window.atob(str)));
+    }
+
+    async function loginUser() {
+      const username = document.getElementById('usernameInput').value.trim().toLowerCase();
       if (!username) return alert('Ingresa un nombre de usuario válido');
 
       currentUser = username;
       document.getElementById('currentUserDisplay').innerText = currentUser;
       document.getElementById('userModal').style.display = 'none';
 
-      loadUserData(currentUser);
+      await loadFromGitHub(currentUser);
     }
 
     function switchUser() {
@@ -177,27 +189,98 @@
       document.getElementById('userModal').style.display = 'flex';
     }
 
-    function saveUserData() {
-      if (!currentUser) return;
+    // CARGAR JSON DESDE GITHUB (GET)
+    async function loadFromGitHub(username) {
+      showStatus('Buscando datos en GitHub...');
+      const filePath = `data/${username}.json`;
+      const url = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${filePath}`;
 
-      const data = buildDataStructure();
-      localStorage.setItem(`tierlist_user_${currentUser}`, JSON.stringify(data));
-      alert(`¡Progreso guardado para el usuario ${currentUser}!`);
-    }
-
-    function loadUserData(username) {
-      const saved = localStorage.getItem(`tierlist_user_${username}`);
-      if (saved) {
-        renderFromData(JSON.parse(saved));
-      } else {
-        renderFromData({
-          tiers: defaultTiers.map(t => ({ name: t.name, color: t.color, items: [] })),
-          bank: []
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `token ${GH_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
         });
+
+        if (response.status === 404) {
+          showStatus('Nuevo usuario: cargando plantilla inicial.');
+          currentSha = null; // No existe archivo previo
+          renderFromData({
+            tiers: defaultTiers.map(t => ({ name: t.name, color: t.color, items: [] })),
+            bank: []
+          });
+        } else if (response.ok) {
+          const fileData = await response.json();
+          currentSha = fileData.sha; // Guardamos el SHA para la próxima actualización
+
+          // La API devuelve el contenido codificado en Base64
+          const jsonText = b64_to_utf8(fileData.content.replace(/\n/g, ''));
+          const data = JSON.parse(jsonText);
+          
+          renderFromData(data);
+          showStatus('¡Datos cargados desde GitHub!');
+        } else {
+          alert('Error al conectar con la API de GitHub.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Ocurrió un error al intentar cargar los datos.');
+      } finally {
+        hideStatus();
       }
     }
 
-    /* --- CONSTRUIR / RENDERIZAR DESDE JSON --- */
+    // GUARDAR JSON EN GITHUB (PUT)
+    async function saveToGitHub() {
+      if (!currentUser) return;
+
+      showStatus('Guardando en GitHub...');
+      const data = buildDataStructure();
+      const jsonString = JSON.stringify(data, null, 2);
+      const contentB64 = utf8_to_b64(jsonString);
+
+      const filePath = `data/${currentUser}.json`;
+      const url = `https://api.github.com/repos/${venticoops}/${octiermaker.github.io}/contents/${filePath}`;
+
+      const payload = {
+        message: `Guardado automático de ${currentUser}`,
+        content: contentB64
+      };
+
+      // Si el archivo ya existía en GitHub, es obligatorio enviar su sha
+      if (currentSha) {
+        payload.sha = currentSha;
+      }
+
+      try {
+        const response = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `token ${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}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/vnd.github.v3+json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          const resData = await response.json();
+          currentSha = resData.content.sha; // Actualizamos el SHA
+          alert(`¡Estado guardado correctamente en GitHub para ${currentUser}!`);
+        } else {
+          const errData = await response.json();
+          alert(`Error al guardar en GitHub: ${errData.message}`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Error de conexión al guardar.');
+      } finally {
+        hideStatus();
+      }
+    }
+
+    /* --- CONSTRUCCIÓN DE ESTRUCTURA Y DOM --- */
     function buildDataStructure() {
       const tiers = [];
       document.querySelectorAll('.tier-row').forEach(row => {
@@ -221,7 +304,6 @@
       tierList.innerHTML = '';
       bank.innerHTML = '';
 
-      // Cargar Filas
       data.tiers.forEach(t => {
         const row = createTierRowElement(t.name, t.color);
         const dropzone = row.querySelector('.tier-dropzone');
@@ -229,42 +311,11 @@
         tierList.appendChild(row);
       });
 
-      // Cargar Banco
       data.bank.forEach(src => bank.appendChild(createImageElement(src)));
     }
 
-    /* --- ARCHIVOS JSON EXTERNOS --- */
-    function exportJSON() {
-      const data = buildDataStructure();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `tierlist_${currentUser || 'data'}.json`;
-      a.click();
-    }
-
-    function importJSON(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target.result);
-          renderFromData(data);
-          alert('Datos cargados exitosamente desde el archivo JSON');
-        } catch (err) {
-          alert('El archivo JSON no tiene un formato válido');
-        }
-      };
-      reader.readAsText(file);
-      event.target.value = '';
-    }
-
-    /* --- COMPONENTES DOM --- */
     function addTier(name, color) {
-      const tierList = document.getElementById('tierList');
-      tierList.appendChild(createTierRowElement(name, color));
+      document.getElementById('tierList').appendChild(createTierRowElement(name, color));
     }
 
     function createTierRowElement(name, color) {
@@ -295,7 +346,6 @@
       const row = btn.closest('.tier-row');
       const dropzone = row.querySelector('.tier-dropzone');
       const bank = document.getElementById('bank');
-      
       while (dropzone.firstChild) {
         bank.appendChild(dropzone.firstChild);
       }
@@ -306,10 +356,8 @@
       input.parentElement.style.backgroundColor = input.value;
     }
 
-    /* --- DELEGACIÓN DRAG & DROP (Con soporte para Trash Bin) --- */
+    /* --- DRAG & DROP & TRASH BIN --- */
     function setupDragAndDrop() {
-      const trashBin = document.getElementById('trashBin');
-
       document.addEventListener('dragstart', (e) => {
         if (e.target.classList.contains('draggable-item')) {
           draggedItem = e.target;
@@ -334,12 +382,8 @@
         const dropzone = e.target.closest('.tier-dropzone');
         const trash = e.target.closest('.trash-bin');
 
-        if (dropzone) {
-          dropzone.classList.remove('drag-over');
-        }
-        if (trash) {
-          trash.classList.remove('drag-over');
-        }
+        if (dropzone) dropzone.classList.remove('drag-over');
+        if (trash) trash.classList.remove('drag-over');
       });
 
       document.addEventListener('drop', (e) => {
@@ -349,7 +393,7 @@
         if (trash && draggedItem) {
           e.preventDefault();
           trash.classList.remove('drag-over');
-          draggedItem.remove(); // Elimina la imagen del DOM
+          draggedItem.remove();
           draggedItem = null;
         } else if (dropzone && draggedItem) {
           e.preventDefault();
@@ -360,7 +404,7 @@
       });
     }
 
-    /* --- MANEJO DE CROPPER --- */
+    /* --- CROPPER --- */
     const imageInput = document.getElementById('imageInput');
     const cropModal = document.getElementById('cropModal');
     const cropImage = document.getElementById('cropImage');
@@ -394,6 +438,17 @@
         cropper.destroy();
         cropper = null;
       }
+    }
+
+    /* --- HELPERS UI --- */
+    function showStatus(msg) {
+      const el = document.getElementById('loadingStatus');
+      el.innerText = msg;
+      el.style.display = 'inline';
+    }
+
+    function hideStatus() {
+      document.getElementById('loadingStatus').style.display = 'none';
     }
   </script>
 </body>
