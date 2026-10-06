@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tier List Maker con Usuarios y Caneca</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+  <style>
+    * { box-sizing: border-box; font-family: sans-serif; margin: 0; padding: 0; }
+    body { background: #121212; color: #fff; padding: 20px; display: flex; flex-direction: column; align-items: center; padding-bottom: 100px; }
+    
+    .header-bar {
+      width: 100%; max-width: 900px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;
+    }
+    .user-info { display: flex; align-items: center; gap: 10px; font-weight: bold; background: #222; padding: 6px 12px; border-radius: 20px; }
+
+    /* Panel de control */
+    .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; }
+    button, label.btn {
+      background: #333; color: #fff; border: 1px solid #555; padding: 8px 12px;
+      cursor: pointer; border-radius: 4px; font-size: 14px;
+    }
+    button:hover, label.btn:hover { background: #444; }
+    button.btn-save { background: #28a745; border-color: #28a745; }
+    button.btn-save:hover { background: #218838; }
+    button.btn-json { background: #17a2b8; border-color: #17a2b8; }
+    button.btn-json:hover { background: #138496; }
+    input[type="file"] { display: none; }
+
+    /* Tier List */
+    .tier-list { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 2px; background: #000; border: 2px solid #000; }
+    .tier-row { display: flex; min-height: 80px; background: #1a1a1a; }
+    
+    .tier-header {
+      width: 120px; display: flex; align-items: center; justify-content: space-between;
+      padding: 5px; color: #000; font-weight: bold; position: relative;
+    }
+    .tier-label { outline: none; font-size: 18px; width: 80%; text-align: center; word-break: break-word; }
+    .tier-color-picker { width: 18px; height: 18px; border: none; cursor: pointer; background: transparent; }
+
+    .tier-dropzone {
+      flex: 1; display: flex; flex-wrap: wrap; gap: 5px; padding: 5px;
+      background: #222; min-height: 80px; align-items: center;
+    }
+    .tier-dropzone.drag-over { background: #333; }
+
+    .tier-actions { display: flex; flex-direction: column; justify-content: center; background: #111; padding: 2px; }
+    .tier-actions button { background: transparent; border: none; color: #888; font-size: 12px; padding: 4px; }
+    .tier-actions button:hover { color: #fff; }
+
+    /* Banco de elementos */
+    .bank-container { width: 100%; max-width: 900px; margin-top: 20px; }
+    .bank-title { margin-bottom: 8px; font-size: 16px; }
+    .item-bank {
+      min-height: 90px; background: #1a1a1a; border: 2px dashed #444;
+      display: flex; flex-wrap: wrap; gap: 5px; padding: 10px;
+    }
+
+    /* Items */
+    .draggable-item {
+      width: 70px; height: 70px; object-fit: cover; cursor: grab;
+      user-select: none; border-radius: 2px;
+    }
+    .draggable-item:active { cursor: grabbing; }
+
+    /* Trash Bin (Caneca de Basura) */
+    .trash-bin {
+      position: fixed; bottom: 25px; right: 25px;
+      width: 70px; height: 70px; background: #dc3545; border: 2px solid #ff6b6b;
+      border-radius: 50%; display: flex; justify-content: center; align-items: center;
+      font-size: 30px; color: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      z-index: 500; cursor: pointer; transition: transform 0.15s ease, background-color 0.15s ease;
+    }
+    .trash-bin.drag-over {
+      background: #bd2130; border-color: #fff; transform: scale(1.15);
+    }
+
+    /* Modales */
+    .modal {
+      display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 1000;
+    }
+    .modal-content { background: #222; padding: 20px; border-radius: 6px; max-width: 400px; width: 90%; }
+    .modal-content input[type="text"] {
+      width: 100%; padding: 10px; margin: 15px 0; background: #111; border: 1px solid #444; color: #fff; border-radius: 4px;
+    }
+    .img-container { max-height: 350px; margin-bottom: 15px; background: #000; }
+    .img-container img { max-width: 100%; }
+  </style>
+</head>
+<body>
+
+  <!-- Modal de Usuario -->
+  <div class="modal" id="userModal">
+    <div class="modal-content">
+      <h2>Ingresar usuario</h2>
+      <p style="color: #aaa; font-size: 14px; margin-top: 5px;">Introduce tu nombre para guardar tus cambios en el navegador o cargar tu sesión existente.</p>
+      <input type="text" id="usernameInput" placeholder="Nombre de usuario..." autofocus>
+      <button onclick="loginUser()" style="width: 100%; background: #28a745; padding: 10px; font-weight: bold;">Entrar</button>
+    </div>
+  </div>
+
+  <div class="header-bar">
+    <h1>Tier List Maker</h1>
+    <div class="user-info">
+      👤 <span id="currentUserDisplay">Invitado</span>
+      <button onclick="switchUser()" style="padding: 2px 8px; font-size: 11px;">Cambiar</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <label class="btn" for="imageInput">Subir Imagen</label>
+    <input type="file" id="imageInput" accept="image/*">
+    <button onclick="addTier('NUEVO', '#858585')">+ Agregar Fila</button>
+    <button class="btn-save" onclick="saveUserData()">💾 Guardar Sesión</button>
+    <button class="btn-json" onclick="exportJSON()">📥 Descargar JSON</button>
+    <label class="btn" for="jsonInput" style="background:#17a2b8;">📤 Cargar JSON</label>
+    <input type="file" id="jsonInput" accept=".json" onchange="importJSON(event)">
+  </div>
+
+  <div class="tier-list" id="tierList"></div>
+
+  <div class="bank-container">
+    <div class="bank-title">Banco de Imágenes</div>
+    <div class="item-bank tier-dropzone" id="bank"></div>
+  </div>
+
+  <!-- Trash Bin -->
+  <div class="trash-bin" id="trashBin" title="Arrastra una imagen aquí para eliminarla">
+    🗑️
+  </div>
+
+  <!-- Modal Recorte -->
+  <div class="modal" id="cropModal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="img-container">
+        <img id="cropImage" src="">
+      </div>
+      <div style="display:flex; justify-content: flex-end; gap:10px;">
+        <button onclick="closeCropModal()">Cancelar</button>
+        <button onclick="cropAndSave()" style="background:#28a745;">Guardar Imagen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+  <script>
+    let cropper = null;
+    let draggedItem = null;
+    let currentUser = null;
+
+    const defaultTiers = [
+      { name: 'S', color: '#ff7f7f' },
+      { name: 'A', color: '#ffbf7f' },
+      { name: 'B', color: '#ffff7f' },
+      { name: 'C', color: '#7fff7f' }
+    ];
+
+    window.onload = () => {
+      setupDragAndDrop();
+    };
+
+    /* --- SISTEMA DE USUARIO Y PERSISTENCIA --- */
+    function loginUser() {
+      const username = document.getElementById('usernameInput').value.trim();
+      if (!username) return alert('Ingresa un nombre de usuario válido');
+
+      currentUser = username;
+      document.getElementById('currentUserDisplay').innerText = currentUser;
+      document.getElementById('userModal').style.display = 'none';
+
+      loadUserData(currentUser);
+    }
+
+    function switchUser() {
+      document.getElementById('usernameInput').value = '';
+      document.getElementById('userModal').style.display = 'flex';
+    }
+
+    function saveUserData() {
+      if (!currentUser) return;
+
+      const data = buildDataStructure();
+      localStorage.setItem(`tierlist_user_${currentUser}`, JSON.stringify(data));
+      alert(`¡Progreso guardado para el usuario ${currentUser}!`);
+    }
+
+    function loadUserData(username) {
+      const saved = localStorage.getItem(`tierlist_user_${username}`);
+      if (saved) {
+        renderFromData(JSON.parse(saved));
+      } else {
+        renderFromData({
+          tiers: defaultTiers.map(t => ({ name: t.name, color: t.color, items: [] })),
+          bank: []
+        });
+      }
+    }
+
+    /* --- CONSTRUIR / RENDERIZAR DESDE JSON --- */
+    function buildDataStructure() {
+      const tiers = [];
+      document.querySelectorAll('.tier-row').forEach(row => {
+        const name = row.querySelector('.tier-label').innerText;
+        const color = row.querySelector('.tier-color-picker').value;
+        const items = [];
+        row.querySelectorAll('.draggable-item').forEach(img => items.push(img.src));
+        tiers.push({ name, color, items });
+      });
+
+      const bank = [];
+      document.querySelectorAll('#bank .draggable-item').forEach(img => bank.push(img.src));
+
+      return { user: currentUser, tiers, bank };
+    }
+
+    function renderFromData(data) {
+      const tierList = document.getElementById('tierList');
+      const bank = document.getElementById('bank');
+      
+      tierList.innerHTML = '';
+      bank.innerHTML = '';
+
+      // Cargar Filas
+      data.tiers.forEach(t => {
+        const row = createTierRowElement(t.name, t.color);
+        const dropzone = row.querySelector('.tier-dropzone');
+        t.items.forEach(src => dropzone.appendChild(createImageElement(src)));
+        tierList.appendChild(row);
+      });
+
+      // Cargar Banco
+      data.bank.forEach(src => bank.appendChild(createImageElement(src)));
+    }
+
+    /* --- ARCHIVOS JSON EXTERNOS --- */
+    function exportJSON() {
+      const data = buildDataStructure();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `tierlist_${currentUser || 'data'}.json`;
+      a.click();
+    }
+
+    function importJSON(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          renderFromData(data);
+          alert('Datos cargados exitosamente desde el archivo JSON');
+        } catch (err) {
+          alert('El archivo JSON no tiene un formato válido');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+
+    /* --- COMPONENTES DOM --- */
+    function addTier(name, color) {
+      const tierList = document.getElementById('tierList');
+      tierList.appendChild(createTierRowElement(name, color));
+    }
+
+    function createTierRowElement(name, color) {
+      const row = document.createElement('div');
+      row.className = 'tier-row';
+      row.innerHTML = `
+        <div class="tier-header" style="background-color: ${color}">
+          <span class="tier-label" contenteditable="true">${name}</span>
+          <input type="color" class="tier-color-picker" value="${color}" onchange="changeColor(this)">
+        </div>
+        <div class="tier-dropzone"></div>
+        <div class="tier-actions">
+          <button onclick="deleteTier(this)">✕</button>
+        </div>
+      `;
+      return row;
+    }
+
+    function createImageElement(src) {
+      const img = document.createElement('img');
+      img.src = src;
+      img.className = 'draggable-item';
+      img.draggable = true;
+      return img;
+    }
+
+    function deleteTier(btn) {
+      const row = btn.closest('.tier-row');
+      const dropzone = row.querySelector('.tier-dropzone');
+      const bank = document.getElementById('bank');
+      
+      while (dropzone.firstChild) {
+        bank.appendChild(dropzone.firstChild);
+      }
+      row.remove();
+    }
+
+    function changeColor(input) {
+      input.parentElement.style.backgroundColor = input.value;
+    }
+
+    /* --- DELEGACIÓN DRAG & DROP (Con soporte para Trash Bin) --- */
+    function setupDragAndDrop() {
+      const trashBin = document.getElementById('trashBin');
+
+      document.addEventListener('dragstart', (e) => {
+        if (e.target.classList.contains('draggable-item')) {
+          draggedItem = e.target;
+          e.dataTransfer.setData('text/plain', '');
+        }
+      });
+
+      document.addEventListener('dragover', (e) => {
+        const dropzone = e.target.closest('.tier-dropzone');
+        const trash = e.target.closest('.trash-bin');
+
+        if (dropzone) {
+          e.preventDefault();
+          dropzone.classList.add('drag-over');
+        } else if (trash) {
+          e.preventDefault();
+          trash.classList.add('drag-over');
+        }
+      });
+
+      document.addEventListener('dragleave', (e) => {
+        const dropzone = e.target.closest('.tier-dropzone');
+        const trash = e.target.closest('.trash-bin');
+
+        if (dropzone) {
+          dropzone.classList.remove('drag-over');
+        }
+        if (trash) {
+          trash.classList.remove('drag-over');
+        }
+      });
+
+      document.addEventListener('drop', (e) => {
+        const dropzone = e.target.closest('.tier-dropzone');
+        const trash = e.target.closest('.trash-bin');
+
+        if (trash && draggedItem) {
+          e.preventDefault();
+          trash.classList.remove('drag-over');
+          draggedItem.remove(); // Elimina la imagen del DOM
+          draggedItem = null;
+        } else if (dropzone && draggedItem) {
+          e.preventDefault();
+          dropzone.classList.remove('drag-over');
+          dropzone.appendChild(draggedItem);
+          draggedItem = null;
+        }
+      });
+    }
+
+    /* --- MANEJO DE CROPPER --- */
+    const imageInput = document.getElementById('imageInput');
+    const cropModal = document.getElementById('cropModal');
+    const cropImage = document.getElementById('cropImage');
+
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          cropImage.src = event.target.result;
+          cropModal.style.display = 'flex';
+          if (cropper) cropper.destroy();
+          cropper = new Cropper(cropImage, { aspectRatio: 1, viewMode: 1 });
+        };
+        reader.readAsDataURL(file);
+      }
+      imageInput.value = '';
+    });
+
+    function cropAndSave() {
+      if (!cropper) return;
+      const canvas = cropper.getCroppedCanvas({ width: 150, height: 150 });
+      const img = createImageElement(canvas.toDataURL('image/png'));
+      document.getElementById('bank').appendChild(img);
+      closeCropModal();
+    }
+
+    function closeCropModal() {
+      cropModal.style.display = 'none';
+      if (cropper) {
+        cropper.destroy();
+        cropper = null;
+      }
+    }
+  </script>
+</body>
+</html>
