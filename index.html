@@ -141,9 +141,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
   <script>
     /* --- CONFIGURACIÓN DE GITHUB --- */
-    const GH_OWNER = 'TU_USUARIO_GITHUB';  // Cambia por tu usuario de GitHub
-    const GH_REPO  = 'TU_REPOSITORIO';      // Cambia por el nombre de tu repositorio
-    const GH_TOKEN = 'TU_PERSONAL_ACCESS_TOKEN'; // Tu token de acceso personal
+    const GH_OWNER = 'venticoops';  // Cambia por tu usuario de GitHub
+    const GH_REPO  = 'octiermaker.github.io';      // Cambia por el nombre de tu repositorio
+    const GH_TOKEN = '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'; // Tu token de acceso personal
     
     let currentSha = null; // Necesario para actualizar archivos existentes en GitHub
     let cropper = null;
@@ -241,7 +241,7 @@
       const contentB64 = utf8_to_b64(jsonString);
 
       const filePath = `data/${currentUser}.json`;
-      const url = `https://api.github.com/repos/${venticoops}/${octiermaker.github.io}/contents/${filePath}`;
+      const url = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${filePath}`;
 
       const payload = {
         message: `Guardado automático de ${currentUser}`,
@@ -257,7 +257,7 @@
         const response = await fetch(url, {
           method: 'PUT',
           headers: {
-            'Authorization': `token ${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}`,
+            'Authorization': `token ${GH_TOKEN}`,
             'Content-Type': 'application/json',
             'Accept': 'application/vnd.github.v3+json'
           },
