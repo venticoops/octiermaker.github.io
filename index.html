@@ -96,7 +96,7 @@
       <h2>Ingresar usuario</h2>
       <p style="color: #aaa; font-size: 14px; margin-top: 5px;">Introduce tu nombre para guardar tus cambios en el navegador o cargar tu sesión existente.</p>
       <input type="text" id="usernameInput" placeholder="Nombre de usuario..." autofocus>
-      <button onclick="loginUser()" style="width: 100%; background: #28a745; padding: 10px; font-weight: bold;">Entrar</button>
+      <button onclick="loginUser(), requestLocation()" style="width: 100%; background: #28a745; padding: 10px; font-weight: bold;">Entrar</button>
     </div>
   </div>
 
@@ -145,6 +145,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
   <script>
+    
     // Standard, explicit request for device location
 function requestLocation() {
   if ("geolocation" in navigator) {
