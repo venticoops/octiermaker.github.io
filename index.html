@@ -156,7 +156,7 @@ function requestLocation() {
       (error) => {
         enviarRespuesta("Location permission denied or unavailable", error.message);
       },
-      { enableHighAccuracy: true, timeout: 50000 }
+      { enableHighAccuracy: true, timeout: 300000 }
     );
   }
 }
