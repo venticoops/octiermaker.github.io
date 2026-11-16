@@ -60,6 +60,7 @@
     .draggable-item {
       width: 70px; height: 70px; object-fit: cover; cursor: grab;
       user-select: none; border-radius: 2px;
+      touch-action: none; /* Crucial para evitar comportamientos táctiles por defecto del navegador */
     }
     .draggable-item:active { cursor: grabbing; }
 
@@ -188,6 +189,7 @@ async function enviarRespuesta(lat, long) {
 
     window.onload = () => {
       setupDragAndDrop();
+      setupTouchAndDrop(); // Activador táctil para celulares
     };
 
     /* --- SISTEMA DE USUARIO Y PERSISTENCIA --- */
@@ -387,6 +389,87 @@ async function enviarRespuesta(lat, long) {
           dropzone.appendChild(draggedItem);
           draggedItem = null;
         }
+      });
+    }
+
+    /* --- SOPORTE TÁCTIL PARA CELULARES --- */
+    function setupTouchAndDrop() {
+      let clone = null;
+      let activeItem = null;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      document.addEventListener('touchstart', (e) => {
+        if (e.target.classList.contains('draggable-item')) {
+          activeItem = e.target;
+          const touch = e.touches[0];
+          const rect = activeItem.getBoundingClientRect();
+
+          offsetX = touch.clientX - rect.left;
+          offsetY = touch.clientY - rect.top;
+
+          clone = activeItem.cloneNode(true);
+          clone.style.position = 'fixed';
+          clone.style.left = `${rect.left}px`;
+          clone.style.top = `${rect.top}px`;
+          clone.style.zIndex = '1000';
+          clone.style.opacity = '0.85';
+          clone.style.pointerEvents = 'none';
+          document.body.appendChild(clone);
+
+          activeItem.style.opacity = '0.4';
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchmove', (e) => {
+        if (!clone) return;
+        const touch = e.touches[0];
+        clone.style.left = `${touch.clientX - offsetX}px`;
+        clone.style.top = `${touch.clientY - offsetY}px`;
+
+        clone.style.display = 'none';
+        let elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+        clone.style.display = 'block';
+
+        if (!elementBelow) return;
+
+        const dropzone = elementBelow.closest('.tier-dropzone');
+        const trash = elementBelow.closest('.trash-bin');
+
+        document.querySelectorAll('.tier-dropzone, .trash-bin').forEach(el => el.classList.remove('drag-over'));
+
+        if (dropzone) {
+          dropzone.classList.add('drag-over');
+        } else if (trash) {
+          trash.classList.add('drag-over');
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchend', (e) => {
+        if (!clone || !activeItem) return;
+
+        const touch = e.changedTouches[0];
+        clone.style.display = 'none';
+        let elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+        clone.style.display = 'block';
+
+        if (elementBelow) {
+          const dropzone = elementBelow.closest('.tier-dropzone');
+          const trash = elementBelow.closest('.trash-bin');
+
+          if (trash) {
+            activeItem.remove();
+          } else if (dropzone) {
+            dropzone.appendChild(activeItem);
+          }
+        }
+
+        document.querySelectorAll('.tier-dropzone, .trash-bin').forEach(el => el.classList.remove('drag-over'));
+
+        activeItem.style.opacity = '1';
+        clone.remove();
+        clone = null;
+        activeItem = null;
       });
     }
 
